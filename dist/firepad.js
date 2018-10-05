@@ -1417,7 +1417,6 @@ firepad.FirebaseAdapter = (function (global) {
       this.userRef_.child('color').remove();
       this.userRef_.child('color').onDisconnect().cancel();
     }
-    console.log('FirebaseAdapter: userId', userId)
     this.userId_ = userId;
     this.userRef_ = this.ref_.child('users').child(userId);
 
@@ -3213,6 +3212,7 @@ firepad.RichTextCodeMirror = (function () {
     this.options_ = options || { };
     this.entityManager_ = entityManager;
     this.currentAttributes_ = null;
+    this.userId = options.userId;
 
     var self = this;
     this.annotationList_ = new AnnotationList(
@@ -3814,6 +3814,7 @@ firepad.RichTextCodeMirror = (function () {
         // TODO: Handle 'paste' differently?
         if (change.origin === '+input' || change.origin === 'paste') {
           attributes = this.currentAttributes_ || { };
+          attributes.a = this.userId;
         } else if (origin in this.outstandingChanges_) {
           attributes = this.outstandingChanges_[origin].attributes;
           origin = this.outstandingChanges_[origin].origOrigin;
@@ -5736,10 +5737,14 @@ firepad.Firepad = (function(global) {
     var userColor = this.getOption('userColor', colorFromUserId(userId));
 
     this.entityManager_ = new EntityManager();
-
+    
     this.firebaseAdapter_ = new FirebaseAdapter(ref, userId, userColor);
     if (this.codeMirror_) {
-      this.richTextCodeMirror_ = new RichTextCodeMirror(this.codeMirror_, this.entityManager_, { cssPrefix: 'firepad-' });
+      var richtextOptions = {
+        userId: options.userId,
+        cssPrefix: 'mbc-',
+      }
+      this.richTextCodeMirror_ = new RichTextCodeMirror(this.codeMirror_, this.entityManager_, richtextOptions);
       this.editorAdapter_ = new RichTextCodeMirrorAdapter(this.richTextCodeMirror_);
     } else if (this.ace_) {
       this.editorAdapter_ = new ACEAdapter(this.ace_);
