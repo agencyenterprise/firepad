@@ -1,4 +1,4 @@
-firepad = {} unless firepad?
+firepad = {} unless firepad? 
 
 class firepad.ACEAdapter
   ignoreChanges: false
