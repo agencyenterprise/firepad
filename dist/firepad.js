@@ -1773,22 +1773,7 @@ firepad.FirebaseAdapter = (function (global) {
     if (typeof data.a !== 'string' || typeof data.o !== 'object') {
       return null;
     }
-    // Add a new attribute r: (read|unread)
-    if (typeof data.o === 'object' && data.o.length >= 2) {
-      var attributes = data.o[1];
-      // Just add this new attribute if it has an author a:
-      if (attributes['a']) {
-        if (this.userId_ !== attributes['a']) {
-          if (this.lastViewedRevision_ + 1 < revisionFromId(revisionId)) {
-            attributes['r'] = 'unread';
-            data.o[1] = attributes;
-          }
-        } else {
-          attributes['r'] = 'read';
-        }
-        data.o[1] = attributes;
-      }
-    }
+    data = this.markOperationAsRead(data, revisionId)
     var op = null;
     try {
       op = TextOperation.fromJSON(data.o);
@@ -1805,6 +1790,35 @@ firepad.FirebaseAdapter = (function (global) {
       operation: op
     }
   };
+
+  FirebaseAdapter.prototype.getOperationAttributesIndex = function (data) {
+    var index = -1;
+    if (typeof data.o === 'object' && data.o.length >= 2) {
+      data.o.forEach(function (attribute, i) {
+        if (attribute.a) {
+          index = i;
+        }
+      })
+    }
+
+    return index;
+  }
+
+  FirebaseAdapter.prototype.markOperationAsRead = function (data, revisionId) {
+    var index = this.getOperationAttributesIndex(data);
+    if (index === -1) {
+
+      return data;
+    }
+
+    var attributes = data.o[index];
+    if (attributes[this.userId_] === 'unread' && (this.lastViewedRevision_ + 1 >= revisionFromId(revisionId))) {
+      attributes[this.userId_] = 'read';
+      data.o[index] = attributes;
+    }
+
+    return data;
+  }
 
   FirebaseAdapter.prototype.saveCheckpoint_ = function () {
     this.ref_.child('checkpoint').set({
@@ -3472,6 +3486,7 @@ firepad.RichTextCodeMirror = (function () {
     this.entityManager_ = entityManager;
     this.currentAttributes_ = null;
     this.userId = options.userId;
+    this.usersIds = options.usersIds;
 
     var self = this;
     this.annotationList_ = new AnnotationList(
@@ -4139,9 +4154,7 @@ firepad.RichTextCodeMirror = (function () {
         var attributes;
         // TODO: Handle 'paste' differently?
         if (change.origin === '+input' || change.origin === 'paste') {
-          attributes = this.currentAttributes_ || {};
-          attributes.a = this.userId;
-          attributes.r = 'read';
+          attributes = this.parseAuthorAndReadAttribute();
         } else if (origin in this.outstandingChanges_) {
           attributes = this.outstandingChanges_[origin].attributes;
           origin = this.outstandingChanges_[origin].origOrigin;
@@ -4170,6 +4183,15 @@ firepad.RichTextCodeMirror = (function () {
       this.trigger('change', this, newChanges);
     }
   };
+
+  RichTextCodeMirror.prototype.parseAuthorAndReadAttribute = function () {
+    var attributes = this.currentAttributes_ || {};
+    attributes.a = this.userId;
+    this.usersIds.forEach(function (userId) {
+      attributes[userId] = (attributes.a === userId) ? 'read' : 'unread';;
+    })
+    return attributes;
+  }
 
   RichTextCodeMirror.prototype.convertCoordinateSystemForChanges_ = function (changes) {
     // We have to convert the positions in the pre-change coordinate system to indexes.
@@ -6160,6 +6182,7 @@ firepad.Firepad = (function (global) {
       var richtextOptions = {
         userId: options.userId,
         cssPrefix: 'firepad-',
+        usersIds: options.usersIds,
       }
       this.richTextCodeMirror_ = new RichTextCodeMirror(this.codeMirror_, this.entityManager_, richtextOptions);
       this.editorAdapter_ = new RichTextCodeMirrorAdapter(this.richTextCodeMirror_);
