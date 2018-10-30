@@ -1491,18 +1491,25 @@ firepad.FirebaseAdapter = (function (global) {
   };
 
   FirebaseAdapter.prototype.setUserId = function (userId) {
-    if (this.userRef_) {
+    var self = this;
+    if (self.userRef_) {
       // Clean up existing data.  Avoid nuking another user's data
       // (if a future user takes our old name).
-      this.userRef_.child('cursor').remove();
-      this.userRef_.child('cursor').onDisconnect().cancel();
-      this.userRef_.child('color').remove();
-      this.userRef_.child('color').onDisconnect().cancel();
+      self.userRef_.child('cursor').remove();
+      self.userRef_.child('cursor').onDisconnect().cancel();
+      self.userRef_.child('color').remove();
+      self.userRef_.child('color').onDisconnect().cancel();
     }
-    this.userId_ = userId;
-    this.userRef_ = this.ref_.child('users').child(userId);
+    self.userId_ = userId;
+    self.lastViewedRevision_ = -1;
+    self.userRef_ = self.ref_.child('users').child(userId);
 
-    this.initializeUserData_();
+    // Set the last viewed version
+    self.userRef_.child('revision').once('value', function (s) {
+      self.lastViewedRevision_ = revisionFromId(s.val().toString());
+    })
+
+    self.initializeUserData_();
   };
 
   FirebaseAdapter.prototype.isHistoryEmpty = function () {
@@ -1579,6 +1586,14 @@ firepad.FirebaseAdapter = (function (global) {
 
   FirebaseAdapter.prototype.getDocument = function () {
     return this.document_;
+  };
+
+  FirebaseAdapter.prototype.setLastViewedReview = function (lastViewedRevision) {
+    var self = this;
+    setTimeout(function () {
+      self.userRef_.child('revision').set(lastViewedRevision);
+      self.lastViewedRevision_ = revisionFromId(lastViewedRevision);
+    }, 0);
   };
 
   FirebaseAdapter.prototype.registerCallbacks = function (callbacks) {
@@ -1664,8 +1679,15 @@ firepad.FirebaseAdapter = (function (global) {
     this.revision_ = this.checkpointRevision_;
     var revisionId = revisionToId(this.revision_),
       pending = this.pendingReceivedRevisions_;
+
+    var lastViewedRevision;
+
+    if (pending && Object.keys(pending).length) {
+      const reviews = Object.keys(pending);
+      lastViewedRevision = reviews[reviews.length - 1];
+    }
     while (pending[revisionId] != null) {
-      var revision = this.parseRevision_(pending[revisionId]);
+      var revision = this.parseRevision_(pending, revisionId);
       if (!revision) {
         // If a misbehaved client adds a bad operation, just ignore it.
         utils.log('Invalid operation.', this.ref_.toString(), revisionId, pending[revisionId]);
@@ -1685,16 +1707,27 @@ firepad.FirebaseAdapter = (function (global) {
     setTimeout(function () {
       self.trigger('ready');
     }, 0);
+    if (lastViewedRevision) {
+      this.setLastViewedReview(lastViewedRevision);
+    }
   };
 
   FirebaseAdapter.prototype.handlePendingReceivedRevisions_ = function () {
     var pending = this.pendingReceivedRevisions_;
     var revisionId = revisionToId(this.revision_);
     var triggerRetry = false;
+    var lastViewedRevision;
+
+    if (pending && Object.keys(pending).length) {
+      const reviews = Object.keys(pending);
+      lastViewedRevision = reviews[reviews.length - 1];
+      this.setLastViewedReview(lastViewedRevision);
+    }
+
     while (pending[revisionId] != null) {
       this.revision_++;
 
-      var revision = this.parseRevision_(pending[revisionId]);
+      var revision = this.parseRevision_(pending, revisionId);
       if (!revision) {
         // If a misbehaved client adds a bad operation, just ignore it.
         utils.log('Invalid operation.', this.ref_.toString(), revisionId, pending[revisionId]);
@@ -1727,15 +1760,35 @@ firepad.FirebaseAdapter = (function (global) {
       this.sent_ = null;
       this.trigger('retry');
     }
+    if (lastViewedRevision) {
+      // TODO: check this
+    }
   };
 
-  FirebaseAdapter.prototype.parseRevision_ = function (data) {
+  FirebaseAdapter.prototype.parseRevision_ = function (pending, revisionId) {
+    var data = pending[revisionId];
     // We could do some of this validation via security rules.  But it's nice to be robust, just in case.
     if (typeof data !== 'object') {
       return null;
     }
     if (typeof data.a !== 'string' || typeof data.o !== 'object') {
       return null;
+    }
+    // Add a new attribute r: (read|unread)
+    if (typeof data.o === 'object' && data.o.length >= 2) {
+      var attributes = data.o[1];
+      // Just add this new attribute if it has an author a:
+      if (attributes['a']) {
+        if (this.userId_ !== attributes['a']) {
+          if (this.lastViewedRevision_ + 1 < revisionFromId(revisionId)) {
+            attributes['r'] = 'unread';
+            data.o[1] = attributes;
+          }
+        } else {
+          attributes['r'] = 'read';
+        }
+        data.o[1] = attributes;
+      }
     }
     var op = null;
     try {
@@ -1747,6 +1800,7 @@ firepad.FirebaseAdapter = (function (global) {
     if (op.baseLength !== this.document_.targetLength) {
       return null;
     }
+
     return {
       author: data.a,
       operation: op
@@ -4088,6 +4142,7 @@ firepad.RichTextCodeMirror = (function () {
         if (change.origin === '+input' || change.origin === 'paste') {
           attributes = this.currentAttributes_ || {};
           attributes.a = this.userId;
+          attributes.r = 'read';
         } else if (origin in this.outstandingChanges_) {
           attributes = this.outstandingChanges_[origin].attributes;
           origin = this.outstandingChanges_[origin].origOrigin;
