@@ -1504,7 +1504,7 @@ firepad.FirebaseAdapter = (function (global) {
     self.lastViewedRevision_ = -1;
     self.userRef_ = self.ref_.child('users').child(userId);
 
-    // Set the last viewed version
+    // Set the last viewed revision
     self.userRef_.child('revision').once('value', function (s) {
       self.lastViewedRevision_ = revisionFromId(s.val().toString());
     })
@@ -1759,9 +1759,6 @@ firepad.FirebaseAdapter = (function (global) {
     if (triggerRetry) {
       this.sent_ = null;
       this.trigger('retry');
-    }
-    if (lastViewedRevision) {
-      // TODO: check this
     }
   };
 
