@@ -4786,7 +4786,9 @@ firepad.RichTextCodeMirror = (function() {
       }
     }
 
-    addNewLineAtTheEndOfText(cm);
+    if (this.emptySelection_()) {
+      addNewLineAtTheEndOfText(cm);
+    }
   };
 
   RichTextCodeMirror.prototype.getCurrentLineAttributes_ = function() {
