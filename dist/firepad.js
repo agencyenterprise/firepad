@@ -1858,7 +1858,7 @@ firepad.FirebaseAdapter = (function (global) {
 
   FirebaseAdapter.prototype.markOperationAsRead = function (data, revisionId) {
     var index = this.getOperationAttributesIndex(data)
-    console.log('>>', data.o.length)
+
     if (index === -1) {
       return data
     }
